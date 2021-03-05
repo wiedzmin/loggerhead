@@ -1,4 +1,4 @@
-package impl
+package capture
 
 type Desktop struct {
 	Index uint

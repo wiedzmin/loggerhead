@@ -1,71 +1,58 @@
 package impl
 
 import (
-	"github.com/BurntSushi/xgb/screensaver"
-	"github.com/BurntSushi/xgb/xproto"
+	"fmt"
+
 	"github.com/BurntSushi/xgbutil"
-	"github.com/BurntSushi/xgbutil/ewmh"
-	"github.com/BurntSushi/xgbutil/icccm"
+	"github.com/wiedzmin/loggerhead/util/capture"
 )
 
-func GetXIdleTime(x *xgbutil.XUtil) (uint32, error) {
-	screensaver.Init(x.Conn())
-	info, err := screensaver.QueryInfo(x.Conn(), xproto.Drawable(x.RootWin())).Reply()
-	if err != nil {
-		return 0, err
-	}
-	return info.MsSinceUserInput, nil
+type Entry struct {
+	ActiveWindow  string
+	ActiveDesktop capture.Desktop
+	Windows       []string
+	IdleTime      uint32
 }
 
-func getWindowName(x *xgbutil.XUtil, xid xproto.Window) (*string, error) {
-	name, err := ewmh.WmNameGet(x, xid)
-	if err != nil || len(name) == 0 {
-		name, err = icccm.WmNameGet(x, xid)
-		if err != nil || len(name) == 0 { // If we still can't find anything, give up.
-			return nil, err
-		}
+func (e *Entry) Print() {
+	fmt.Printf("idle time: %d\n", e.IdleTime)
+	fmt.Printf("active window: %s\n", e.ActiveWindow)
+	fmt.Printf("active desktop: %d / %s\n", e.ActiveDesktop.Index, e.ActiveDesktop.Name)
+	fmt.Println("==============================")
+	for _, name := range e.Windows {
+		fmt.Printf("%s\n", name)
 	}
-	return &name, nil
 }
 
-func GetWindowNames(x *xgbutil.XUtil) ([]string, error) {
-	var result []string
-	clientids, err := ewmh.ClientListGet(x)
-	if err != nil {
-		return nil, err
-	}
-	for _, clientid := range clientids {
-		name, err := getWindowName(x, clientid)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, *name)
-	}
-	return result, nil
-}
-
-func GetActiveWindowName(x *xgbutil.XUtil) (*string, error) {
-	active, err := ewmh.ActiveWindowGet(x)
-	if err != nil {
-		return nil, err
-	}
-	name, err := getWindowName(x, active)
-	if err != nil {
-		return nil, err
-	}
-	return name, nil
-}
-
-func GetActiveDesktopMeta(x *xgbutil.XUtil) (*Desktop, error) {
-	workspace, err := ewmh.CurrentDesktopGet(x)
+func Capture() (*Entry, error) {
+	var result Entry
+	X, err := xgbutil.NewConn()
 	if err != nil {
 		return nil, err
 	}
 
-	workspaceNames, err := ewmh.DesktopNamesGet(x)
+	idle, err := capture.GetXIdleTime(X)
 	if err != nil {
 		return nil, err
 	}
+	result.IdleTime = idle
 
-	return &Desktop{workspace, workspaceNames[workspace]}, nil
+	active, err := capture.GetActiveWindowName(X)
+	if err != nil {
+		return nil, err
+	}
+	result.ActiveWindow = *active
+
+	desktop, err := capture.GetActiveDesktopMeta(X)
+	if err != nil {
+		return nil, err
+	}
+	result.ActiveDesktop = *desktop
+
+	windowNames, err := capture.GetWindowNames(X)
+	if err != nil {
+		return nil, err
+	}
+	result.Windows = windowNames
+	return &result, nil
 }
